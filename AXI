@@ -1,0 +1,223 @@
+/////////////////  AXI PROTOCOL.V  //////////////////////
+module axi4lite_master (
+    input wire clk,
+    input wire reset_n,
+    output reg [31:0] awaddr,
+    output reg awvalid,
+    input wire awready,
+    output reg [31:0] wdata,
+    output reg wvalid,
+    input wire wready,
+    input wire [1:0] bresp,
+    input wire bvalid,
+    output reg bready,
+    output reg [31:0] araddr,
+    output reg arvalid,
+    input wire arready,
+    input wire [31:0] rdata,
+    input wire [1:0] rresp,
+    input wire rvalid,
+    output reg rready
+);
+
+    // Simple write operation
+    initial begin
+        awaddr <= 0;
+        awvalid <= 0;
+        wdata <= 0;
+        wvalid <= 0;
+        bready <= 0;
+        araddr <= 0;
+        arvalid <= 0;
+        rready <= 0;
+        
+        wait(reset_n == 1);
+        
+        // Write operation
+        @(posedge clk);
+        awaddr <= 32'h00000004;
+        awvalid <= 1;
+        wdata <= 32'hDEADBEEF;
+        wvalid <= 1;
+        @(posedge clk);
+        while(!awready || !wready) @(posedge clk);
+        awvalid <= 0;
+        wvalid <= 0;
+        @(posedge clk);
+        bready <= 1;
+        @(posedge clk);
+        while(!bvalid) @(posedge clk);
+        bready <= 0;
+        
+        // Read operation
+        @(posedge clk);
+        araddr <= 32'h00000004;
+        arvalid <= 1;
+        @(posedge clk);
+        while(!arready) @(posedge clk);
+        arvalid <= 0;
+        rready <= 1;
+        @(posedge clk);
+        while(!rvalid) @(posedge clk);
+        rready <= 0;
+    end
+
+endmodule
+
+
+module axi4lite_slave (
+    input wire clk,
+    input wire reset_n,
+    input wire [31:0] awaddr,
+    input wire awvalid,
+    output reg awready,
+    input wire [31:0] wdata,
+    input wire wvalid,
+    output reg wready,
+    output reg [1:0] bresp,
+    output reg bvalid,
+    input wire bready,
+    input wire [31:0] araddr,
+    input wire arvalid,
+    output reg arready,
+    output reg [31:0] rdata,
+    output reg [1:0] rresp,
+    output reg rvalid,
+    input wire rready
+);
+
+    reg [31:0] mem [0:255];  // Simple memory
+
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            awready <= 0;
+            wready <= 0;
+            bresp <= 2'b00;
+            bvalid <= 0;
+            arready <= 0;
+            rdata <= 0;
+            rresp <= 2'b00;
+            rvalid <= 0;
+        end else begin
+            // Write address handshake
+            if (awvalid && !awready) begin
+                awready <= 1;
+            end else begin
+                awready <= 0;
+            end
+            
+            // Write data handshake
+            if (wvalid && !wready) begin
+                wready <= 1;
+                mem[awaddr[7:0]] <= wdata;
+            end else begin
+                wready <= 0;
+            end
+            
+            // Write response
+            if (awvalid && awready && wvalid && wready) begin
+                bresp <= 2'b00;
+                bvalid <= 1;
+            end else if (bready && bvalid) begin
+                bvalid <= 0;
+            end
+            
+            // Read address handshake
+            if (arvalid && !arready) begin
+                arready <= 1;
+                rdata <= mem[araddr[7:0]];
+                rresp <= 2'b00;
+                rvalid <= 1;
+            end else begin
+                arready <= 0;
+            end
+            
+            // Read data handshake
+            if (rvalid && rready) begin
+                rvalid <= 0;
+            end
+        end
+    end
+
+endmodule
+////////////////////  AXI_TB.V  //////////////////////////
+module tb_axi4lite;
+
+    reg clk;
+    reg reset_n;
+
+    // Master interface signals
+    wire [31:0] awaddr;
+    wire awvalid;
+    wire awready;
+    wire [31:0] wdata;
+    wire wvalid;
+    wire wready;
+    wire [1:0] bresp;
+    wire bvalid;
+    wire bready;
+    wire [31:0] araddr;
+    wire arvalid;
+    wire arready;
+    wire [31:0] rdata;
+    wire [1:0] rresp;
+    wire rvalid;
+    wire rready;
+
+    axi4lite_master uut_master (
+        .clk(clk),
+        .reset_n(reset_n),
+        .awaddr(awaddr),
+        .awvalid(awvalid),
+        .awready(awready),
+        .wdata(wdata),
+        .wvalid(wvalid),
+        .wready(wready),
+        .bresp(bresp),
+        .bvalid(bvalid),
+        .bready(bready),
+        .araddr(araddr),
+        .arvalid(arvalid),
+        .arready(arready),
+        .rdata(rdata),
+        .rresp(rresp),
+        .rvalid(rvalid),
+        .rready(rready)
+    );
+
+    axi4lite_slave uut_slave (
+        .clk(clk),
+        .reset_n(reset_n),
+        .awaddr(awaddr),
+        .awvalid(awvalid),
+        .awready(awready),
+        .wdata(wdata),
+        .wvalid(wvalid),
+        .wready(wready),
+        .bresp(bresp),
+        .bvalid(bvalid),
+        .bready(bready),
+        .araddr(araddr),
+        .arvalid(arvalid),
+        .arready(arready),
+        .rdata(rdata),
+        .rresp(rresp),
+        .rvalid(rvalid),
+        .rready(rready)
+    );
+
+    always #5 clk = ~clk;
+initial begin
+        clk = 0;
+        reset_n = 0;
+        #20 reset_n = 1;
+end
+initial begin
+  #200;
+  $finish;
+end
+initial begin
+  $dumpvars;
+  $dumpfile("dump.vcd");
+end
+endmodule
